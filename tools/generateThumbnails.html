@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<!--
+	DEV TOOL — catalogue thumbnails + suggested DEFAULT_VIEWS.
+	Open: http://localhost/delabo/Smart_Presentation_Exhibition_Uzbek_2026/tools/generateThumbnails.html
+	Reads every `.catalogue-product-list-2[data-model]` from index.php, renders a 480x320 preview
+	per model (download link: save it as the <img src> path) and prints a fitted camera view
+	per `data-key` for js/recyclingPlantAnnotations.js.
+-->
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<title>Catalogue Thumbnails</title>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../vendor/three/build/three.module.js",
+					"three/addons/": "../vendor/three/examples/jsm/"
+				}
+			}
+		</script>
+		<style>
+			body { font-family: sans-serif; background: #f4f7f7; margin: 16px; }
+			.item { display: inline-block; margin: 0 16px 16px 0; vertical-align: top; }
+			.item img { display: block; background: #dbe9e9; border: 1px solid #74e7d4; border-radius: 10px; }
+			pre { background: #fff; padding: 12px; border: 1px solid #ddd; }
+		</style>
+	</head>
+	<body>
+		<h3>Catalogue thumbnails</h3>
+		<div id="items"></div>
+		<h3>Suggested DEFAULT_VIEWS (main camera fov 60, 16:9)</h3>
+		<pre id="views">rendering…</pre>
+		<pre id="result" hidden></pre>
+
+		<script type="module">
+			import * as THREE from "three";
+			import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+			import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+			import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+			import { computeFitView, frameObject } from "../js/cameraFit.js";
+
+			const WIDTH = 480;
+			const HEIGHT = 320;
+			const MAIN_FOV = 60;
+			const MAIN_ASPECT = 16 / 9;
+			const THUMB_PADDING = 0.9;
+
+			const round = (v) => ({ x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3) });
+
+			const html = await (await fetch("../index.php")).text();
+			const doc = new DOMParser().parseFromString(html, "text/html");
+			const models = [...doc.querySelectorAll(".catalogue-product-list-2[data-model]")].map((el) => ({
+				model: el.dataset.model,
+				view: el.dataset.key,
+				thumb: el.querySelector(".catalogue-image-preview-2")?.getAttribute("src"),
+			}));
+
+			const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+			renderer.setClearColor(0x000000, 0); // transparent PNG: blends with the catalogue card
+			renderer.setPixelRatio(1);
+			renderer.setSize(WIDTH, HEIGHT, false);
+
+			const scene = new THREE.Scene();
+			const pmrem = new THREE.PMREMGenerator(renderer);
+			scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+			const camera = new THREE.PerspectiveCamera(45, WIDTH / HEIGHT, 0.01, 10000);
+
+			const draco = new DRACOLoader();
+			draco.setDecoderPath("../vendor/draco/");
+			draco.setDecoderConfig({ type: "js" });
+			const loader = new GLTFLoader();
+			loader.setDRACOLoader(draco);
+
+			const results = [];
+			const views = {};
+			for (const entry of models) {
+				const gltf = await loader.loadAsync("../" + entry.model);
+				scene.add(gltf.scene);
+
+				const { distance } = frameObject(gltf.scene, camera, null, THUMB_PADDING);
+				camera.near = distance / 100;
+				camera.far = distance * 100;
+				camera.updateProjectionMatrix();
+				renderer.render(scene, camera);
+				const dataUrl = renderer.domElement.toDataURL("image/png");
+
+				const fit = computeFitView(gltf.scene, MAIN_FOV, MAIN_ASPECT);
+				if (entry.view) views[entry.view] = { position: round(fit.position), target: round(fit.target) };
+				results.push({ ...entry, dataUrl });
+				scene.remove(gltf.scene);
+
+				const fileName = (entry.thumb || entry.model.replace(/\.glb$/, "_preview.png")).split("/").pop();
+				const item = document.createElement("div");
+				item.className = "item";
+				item.innerHTML = `<img src="${dataUrl}" width="${WIDTH / 2}"><a download="${fileName}" href="${dataUrl}">${fileName}</a>`;
+				document.getElementById("items").append(item);
+			}
+
+			document.getElementById("views").textContent = JSON.stringify(views, null, "\t");
+			// Machine-readable output (used when run headless with --dump-dom).
+			document.getElementById("result").textContent = JSON.stringify({ views, results });
+		</script>
+	</body>
+</html>

@@ -1,0 +1,658 @@
+import * as THREE from "three";
+import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { scene, camera, orbitControls, frameCallbacks } from "../script.js";
+import { modelAnnotations, ACTIVE_MODEL, DEFAULT_VIEW, DEFAULT_VIEWS } from "./recyclingPlantAnnotationsStore.js";
+import { setRevealed, resetReveal } from "./modelReveal.js";
+import { initOutline, setOutline, clearOutline } from "./recyclingPlantOutline.js";
+import { setVoiceOverContext } from "./voiceOver.js";
+import { renderPopupBody } from "./recyclingPlantPopup.js";
+import { closeMedia } from "./mediaLibrary.js";
+import { t, localize, onLangChange } from "./i18n.js";
+
+const explodeButton = document.getElementById("explode-button");
+const listPopup = document.getElementById("rp-list-popup");
+const leaderLineSvg = document.getElementById("rp-leader-line-svg");
+const infoPopup = document.getElementById("rp-info-popup");
+const infoPopupClose = document.getElementById("rp-info-popup-close");
+const infoPopupBadge = document.getElementById("rp-info-popup-badge");
+const infoPopupTitle = document.getElementById("rp-info-popup-title");
+const infoPopupBody = document.getElementById("rp-info-popup-body");
+const infoPopupFooter = document.getElementById("rp-info-popup-footer");
+const ENABLE_DECLUTTER = false;
+const DECLUTTER_INTERVAL_MS = 120;
+const LABEL_GAP_PX = 4;
+const VISIBLE_LABEL_BONUS = 1.5;
+const GHOST_COLOR = 0xe6eef0;
+const GHOST_OPACITY = 1; // 0.3 for see-through, 1 for solid
+// Grey out the non-selected parts while a part is focused? Per catalogue model key (default: yes).
+const GHOST_OTHERS = { container: false };
+const FRAMED_EPSILON = 0.05;
+
+let activated = false;
+let focusedId = null;
+let popupAnn = null;
+let flight = null;
+let activation = null;
+let meshByName = null;
+let ghostMaterial = null;
+const ghostedMeshes = [];
+
+let lastDeclutter = 0;
+let hoveredId = null;
+
+// id -> { listItem, dot?, dotEl?, label?, labelEl?, line?, anchor?, labelOffset? }
+const markerEntries = new Map();
+const groupSections = new Map();
+let groupFilter = null;
+
+if (infoPopupClose) {
+	infoPopupClose.addEventListener("click", closeInfoPopup);
+}
+
+onLangChange(() => {
+	markerEntries.forEach(renderTitles);
+	if (popupAnn) renderInfoPopup(popupAnn);
+});
+
+// ------------------------------------------- helpers -------------------------------------------
+
+function getFile3D() {
+	return scene.getObjectByName("file3D");
+}
+
+function waitForModel() {
+	return new Promise((resolve) => {
+		const check = () => {
+			const file3D = getFile3D();
+			if (file3D) resolve(file3D);
+			else setTimeout(check, 200);
+		};
+		check();
+	});
+}
+
+function buildMeshMap() {
+	if (meshByName) return meshByName;
+	const file3D = getFile3D();
+	if (!file3D) return new Map();
+	meshByName = new Map();
+	const counts = new Map(); 
+	file3D.traverse((child) => {
+		if (!child.isMesh) return;
+		const base = child.name && child.name.length ? child.name : "mesh";
+		let name = base;
+		if (meshByName.has(name)) {
+			let n = (counts.get(base) || 1) + 1;
+			name = `${base}__${n}`;
+			while (meshByName.has(name)) name = `${base}__${++n}`;
+			counts.set(base, n);
+		} else {
+			counts.set(base, 1);
+		}
+		child.name = name; 
+		meshByName.set(name, child);
+	});
+	return meshByName;
+}
+
+export function getMeshMap() {
+	return buildMeshMap();
+}
+
+function toVector3(point) {
+	return new THREE.Vector3(point.x, point.y, point.z);
+}
+
+function isTaggable(ann) {
+	return !ann.standalone && ann.anchor && ann.labelOffset;
+}
+
+function isFlyable(ann) {
+	return !ann.standalone && ann.camera && ann.anchor;
+}
+
+// -------------------------------- leader-line screen-space projection --------------------------------
+function worldToScreen(vector3, width, height) {
+	const projected = vector3.clone().project(camera);
+	return {
+		x: (projected.x * 0.5 + 0.5) * width,
+		y: (-projected.y * 0.5 + 0.5) * height,
+	};
+}
+
+function updateLeaderLines() {
+	const file3D = getFile3D();
+	if (!file3D) return;
+
+	// Read the canvas size once: reading it between the SVG writes below forces a reflow per line.
+	const canvas = document.getElementById("myCanvas");
+	const width = canvas.clientWidth;
+	const height = canvas.clientHeight;
+
+	markerEntries.forEach((entry) => {
+		if (!entry.line) return;
+		const a = worldToScreen(file3D.localToWorld(entry.anchor.clone()), width, height);
+		const b = worldToScreen(file3D.localToWorld(entry.labelOffset.clone()), width, height);
+		entry.line.setAttribute("x1", a.x);
+		entry.line.setAttribute("y1", a.y);
+		entry.line.setAttribute("x2", b.x);
+		entry.line.setAttribute("y2", b.y);
+	});
+}
+
+function labelRank(id, entry, file3D) {
+	if (id === focusedId) return -Infinity;
+	if (id === hoveredId) return -Number.MAX_VALUE;
+	const distance = camera.position.distanceTo(file3D.localToWorld(entry.anchor.clone()));
+	const visible = entry.labelEl.classList.contains("rp-collapsed") ? 0 : VISIBLE_LABEL_BONUS;
+	return distance - visible;
+}
+
+function overlaps(a, b) {
+	return (
+		a.left < b.right + LABEL_GAP_PX &&
+		b.left < a.right + LABEL_GAP_PX &&
+		a.top < b.bottom + LABEL_GAP_PX &&
+		b.top < a.bottom + LABEL_GAP_PX
+	);
+}
+
+function setLabelCollapsed(entry, collapsed) {
+	entry.labelEl.classList.toggle("rp-collapsed", collapsed);
+	entry.line.classList.toggle("rp-collapsed", collapsed);
+}
+
+function declutterLabels(now) {
+	if (now - lastDeclutter < DECLUTTER_INTERVAL_MS) return;
+	lastDeclutter = now;
+
+	const file3D = getFile3D();
+	if (!file3D) return;
+
+	const placed = [];
+	[...markerEntries]
+		.filter(([, entry]) => entry.labelEl)
+		.map(([id, entry]) => ({ entry, rank: labelRank(id, entry, file3D) }))
+		.sort((a, b) => a.rank - b.rank)
+		.forEach(({ entry }) => {
+			const rect = entry.labelEl.getBoundingClientRect();
+			const collapsed = rect.width > 0 && placed.some((other) => overlaps(other, rect));
+			setLabelCollapsed(entry, collapsed);
+			if (!collapsed) placed.push(rect);
+		});
+}
+
+function setHovered(id) {
+	hoveredId = id;
+	lastDeclutter = 0;
+}
+
+frameCallbacks.push(() => {
+	if (!activated) return;
+	const now = performance.now();
+	updateLeaderLines();
+	if (ENABLE_DECLUTTER) declutterLabels(now);
+});
+
+// ------------------------------------- markers + list creation -------------------------------------
+
+function createMarkersAndList() {
+	const file3D = getFile3D();
+	const sorted = modelAnnotations().sort((a, b) => a.order - b.order);
+
+	const groups = [...new Set(sorted.map((ann) => ann.group).filter(Boolean))];
+
+	const top = document.createElement("div");
+	top.className = "rp-list-top";
+	top.innerHTML = `<div class="rp-list-header" data-i18n="annotations.header">${t("annotations.header")}</div>`;
+	if (groups.length > 1) {
+		const filter = document.createElement("div");
+		filter.className = "rp-list-filter";
+		filter.innerHTML = [
+			`<button type="button" class="active" data-i18n="annotations.all">${t("annotations.all")}</button>`,
+			...groups.map((group) => `<button type="button" data-group="${group}">${group}</button>`),
+		].join("");
+		filter.addEventListener("click", (event) => {
+			const button = event.target.closest("button");
+			if (!button) return;
+			filter.querySelectorAll("button").forEach((el) => el.classList.toggle("active", el === button));
+			setGroupFilter(button.dataset.group ?? null);
+		});
+		top.appendChild(filter);
+	}
+	listPopup.appendChild(top);
+
+	sorted.forEach((ann) => {
+		let parent = listPopup;
+		if (ann.group) {
+			if (!groupSections.has(ann.group)) {
+				const section = document.createElement("div");
+				section.className = "rp-list-section";
+				section.innerHTML = `<div class="rp-list-group">${ann.group}</div>`;
+				listPopup.appendChild(section);
+				groupSections.set(ann.group, section);
+			}
+			parent = groupSections.get(ann.group);
+		}
+
+		const item = document.createElement("div");
+		item.className = "rp-list-item";
+		item.dataset.id = ann.id;
+		item.style.opacity = "0";
+		item.innerHTML = `
+			<span class="rp-list-item-badge">${ann.order}</span>
+			<span class="rp-list-item-text">
+				<span class="rp-list-item-title"></span>
+			</span>
+		`;
+		item.addEventListener("click", () => onAnnotationPicked(ann.id));
+		parent.appendChild(item);
+
+		const entry = { ann, listItem: item, titleEls: [item.querySelector(".rp-list-item-title")] };
+
+		if (isTaggable(ann)) {
+			const anchorVec = toVector3(ann.anchor);
+			const labelVec = toVector3(ann.labelOffset);
+
+			const dotDiv = document.createElement("div");
+			dotDiv.className = "rp-annotation-dot";
+			dotDiv.style.opacity = "0";
+			dotDiv.addEventListener("click", (event) => {
+				event.stopPropagation();
+				onAnnotationPicked(ann.id);
+			});
+			dotDiv.addEventListener("pointerenter", () => setHovered(ann.id));
+			dotDiv.addEventListener("pointerleave", () => setHovered(null));
+			const dotObj = new CSS2DObject(dotDiv);
+			dotObj.position.copy(anchorVec);
+			dotObj.name = `rp-dot-${ann.id}`;
+			file3D.add(dotObj);
+
+			const labelDiv = document.createElement("div");
+			labelDiv.className = "rp-annotation-label";
+			labelDiv.style.opacity = "0";
+			labelDiv.innerHTML = `
+				<span class="rp-annotation-badge">${ann.order}</span>
+				<span class="rp-annotation-name"></span>
+			`;
+			labelDiv.addEventListener("click", (event) => {
+				event.stopPropagation();
+				onAnnotationPicked(ann.id);
+			});
+			const labelObj = new CSS2DObject(labelDiv);
+			labelObj.position.copy(labelVec);
+			labelObj.center.set(0.5, 1.0);
+			labelObj.name = `rp-label-${ann.id}`;
+			file3D.add(labelObj);
+
+			const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+			leaderLineSvg.appendChild(line);
+
+			entry.dot = dotObj;
+			entry.dotEl = dotDiv;
+			entry.label = labelObj;
+			entry.labelEl = labelDiv;
+			entry.line = line;
+			entry.anchor = anchorVec;
+			entry.labelOffset = labelVec;
+			entry.titleEls.push(labelDiv.querySelector(".rp-annotation-name"));
+		}
+
+		renderTitles(entry);
+		markerEntries.set(ann.id, entry);
+	});
+}
+
+function isShown(ann) {
+	return !groupFilter || ann.group === groupFilter;
+}
+
+function getDefaultView() {
+	return (groupFilter && DEFAULT_VIEWS[groupFilter]) || DEFAULT_VIEW;
+}
+
+function setGroupFilter(group) {
+	groupFilter = group;
+	listPopup.classList.toggle("rp-filtered", !!group);
+	listPopup.scrollTop = 0;
+	groupSections.forEach((section, key) => section.classList.toggle("rp-hidden", !!group && key !== group));
+	markerEntries.forEach((entry) => {
+		const hidden = !isShown(entry.ann);
+		[entry.dotEl, entry.labelEl, entry.line].forEach((el) => el?.classList.toggle("rp-marker-hidden", hidden));
+	});
+	// A filter always means "overview of this machine": drop any focused part and frame the group.
+	resetView(1.5);
+	document.dispatchEvent(new CustomEvent("groupchange", { detail: group }));
+}
+
+function renderTitles(entry) {
+	const title = localize(entry.ann.title);
+	entry.titleEls.forEach((el) => (el.textContent = title));
+	if (entry.dotEl) entry.dotEl.title = title;
+}
+
+function removeAllMarkers() {
+	const file3D = getFile3D();
+	markerEntries.forEach((entry) => {
+		if (entry.dot) file3D.remove(entry.dot);
+		if (entry.label) file3D.remove(entry.label);
+		if (entry.line) leaderLineSvg.removeChild(entry.line);
+	});
+	markerEntries.clear();
+	groupFilter = null;
+	groupSections.clear();
+	listPopup.classList.remove("rp-filtered");
+	listPopup.innerHTML = "";
+}
+
+function staggerReveal() {
+	const tl = gsap.timeline();
+	Array.from(markerEntries.values()).forEach((entry, i) => {
+		const delay = i * 0.06;
+		if (entry.dotEl) tl.to(entry.dotEl, { opacity: 1, duration: 0.3 }, delay);
+		if (entry.labelEl) tl.to(entry.labelEl, { opacity: 1, duration: 0.3 }, delay);
+		tl.to(entry.listItem, { opacity: 1, duration: 0.3 }, delay);
+	});
+	return tl;
+}
+
+function staggerHide(onComplete) {
+	const tl = gsap.timeline({ onComplete });
+	Array.from(markerEntries.values()).forEach((entry, i) => {
+		const delay = i * 0.03;
+		if (entry.dotEl) tl.to(entry.dotEl, { opacity: 0, duration: 0.2 }, delay);
+		if (entry.labelEl) tl.to(entry.labelEl, { opacity: 0, duration: 0.2 }, delay);
+		tl.to(entry.listItem, { opacity: 0, duration: 0.2 }, delay);
+	});
+	return tl;
+}
+
+// ------------------------------------------- selection visuals -------------------------------------------
+
+function setActiveStates(id) {
+	markerEntries.forEach((entry, key) => {
+		const isActive = key === id;
+		entry.listItem.classList.toggle("active", isActive);
+		if (entry.dotEl) entry.dotEl.classList.toggle("active", isActive);
+		if (entry.labelEl) entry.labelEl.classList.toggle("active", isActive);
+		if (entry.line) entry.line.classList.toggle("active", isActive);
+	});
+}
+
+function dimOthers(id) {
+	markerEntries.forEach((entry, key) => {
+		const dim = id !== null && key !== id;
+		entry.listItem.classList.toggle("rp-dim", dim);
+		if (entry.dotEl) entry.dotEl.classList.toggle("rp-dim", dim);
+		if (entry.labelEl) entry.labelEl.classList.toggle("rp-dim", dim);
+		if (entry.line) entry.line.classList.toggle("rp-dim", dim);
+	});
+}
+
+// ------------------------------------------- mesh highlight -------------------------------------------
+
+function getGhostMaterial() {
+	if (!ghostMaterial) {
+		ghostMaterial = new THREE.MeshStandardMaterial({
+			color: GHOST_COLOR,
+			roughness: 1,
+			metalness: 0,
+			transparent: GHOST_OPACITY < 1,
+			opacity: GHOST_OPACITY,
+			depthWrite: true,
+		});
+	}
+	return ghostMaterial;
+}
+
+function applyGhost(keep) {
+	restoreGhost(); 
+	const ghost = getGhostMaterial();
+	buildMeshMap().forEach((mesh) => {
+		if (keep.has(mesh)) return;
+		if (mesh.userData.rpOrigMat === undefined) mesh.userData.rpOrigMat = mesh.material;
+		mesh.material = ghost;
+		ghostedMeshes.push(mesh);
+	});
+}
+
+function restoreGhost() {
+	ghostedMeshes.forEach((mesh) => {
+		if (mesh.userData.rpOrigMat !== undefined) {
+			mesh.material = mesh.userData.rpOrigMat;
+			delete mesh.userData.rpOrigMat;
+		}
+	});
+	ghostedMeshes.length = 0;
+}
+
+function applyMeshHighlight(meshNames) {
+	if (!meshNames || meshNames.length === 0) return; 
+	const map = buildMeshMap();
+	const meshes = [];
+	meshNames.forEach((name) => {
+		const mesh = map.get(name);
+		if (mesh) meshes.push(mesh);
+	});
+	if (!meshes.length) return;
+
+	if (GHOST_OTHERS[ACTIVE_MODEL] ?? true) applyGhost(new Set(meshes));
+	setOutline("highlight", meshes);
+}
+
+function restoreMeshHighlight() {
+	restoreGhost();
+	clearOutline("highlight");
+}
+
+// ------------------------------------------- info popup -------------------------------------------
+
+function renderInfoPopup(ann) {
+	if (infoPopupBadge) infoPopupBadge.textContent = ann.order;
+	infoPopupTitle.textContent = localize(ann.title);
+	renderPopupBody(infoPopupBody, infoPopupFooter, localize(ann.popup));
+}
+
+function hasPopupContent(ann) {
+	return (localize(ann.popup)?.blocks?.length ?? 0) > 0;
+}
+
+function openInfoPopup(ann) {
+	if (!hasPopupContent(ann)) return; // title-only annotation: the label is enough for now
+	popupAnn = ann;
+	renderInfoPopup(ann);
+	infoPopup.classList.add("active");
+	// Shares the right edge with the catalogue: home.js closes the catalogue on this.
+	document.dispatchEvent(new CustomEvent("infopopupopen"));
+}
+
+export function closeInfoPopup() {
+	popupAnn = null;
+	infoPopup.classList.remove("active");
+	closeMedia();
+}
+
+// ------------------------------------------- camera flight -------------------------------------------
+
+function flyCamera(position, target, duration, onComplete) {
+	flight?.kill();
+	flight = gsap.timeline({
+		onComplete: () => {
+			flight = null;
+			onComplete?.();
+		},
+	});
+	flight.to(
+		camera.position,
+		{ x: position.x, y: position.y, z: position.z, duration, ease: "power2.inOut" },
+		0
+	);
+	flight.to(
+		orbitControls.target,
+		{ x: target.x, y: target.y, z: target.z, duration, ease: "power2.inOut" },
+		0
+	);
+	return flight;
+}
+
+function isAlreadyFramed(cam) {
+	return (
+		camera.position.distanceTo(toVector3(cam.position)) < FRAMED_EPSILON &&
+		orbitControls.target.distanceTo(toVector3(cam.target)) < FRAMED_EPSILON
+	);
+}
+
+function unlockControls() {
+	orbitControls.enabled = true;
+	explodeButton.disabled = false;
+}
+
+function clearFocus() {
+	if (!focusedId) return;
+	focusedId = null;
+	setActiveStates(null);
+	dimOthers(null);
+	setVoiceOverContext(null);
+	restoreMeshHighlight();
+	closeInfoPopup();
+}
+
+function focusAnnotation(id) {
+	const ann = modelAnnotations().find((a) => a.id === id);
+	if (!ann) return Promise.resolve();
+
+	if (focusedId && focusedId !== id) {
+		restoreMeshHighlight();
+		closeInfoPopup();
+	}
+
+	focusedId = id;
+	lastDeclutter = 0;
+	setActiveStates(id);
+	dimOthers(id);
+	setVoiceOverContext(id);
+
+	return new Promise((resolve) => {
+		const settle = () => {
+			if (focusedId !== id) return;
+			unlockControls();
+			applyMeshHighlight(ann.meshNames);
+			openInfoPopup(ann);
+			resolve();
+		};
+
+		if (isAlreadyFramed(ann.camera)) {
+			settle();
+			return;
+		}
+
+		orbitControls.enabled = false;
+		explodeButton.disabled = true;
+		flyCamera(ann.camera.position, ann.camera.target, ann.camera.duration || 1.8, settle);
+	});
+}
+
+function onAnnotationPicked(id) {
+	if (!activated) return;
+	const ann = modelAnnotations().find((a) => a.id === id);
+	if (!ann) return;
+
+	if (ann.standalone) {
+		setActiveStates(id);
+		openInfoPopup(ann);
+		return;
+	}
+
+	if (!isFlyable(ann)) {
+		console.warn(
+			`[recyclingPlant] "${ann.id}" is not tagged yet (missing camera/anchor). Open the site with ?tag=1 to tag it.`
+		);
+		return;
+	}
+
+	focusAnnotation(id);
+}
+
+// ------------------------------------------- activate / deactivate -------------------------------------------
+
+export function activateRecyclingPlant() {
+	activation ??= (async () => {
+		await waitForModel();
+		buildMeshMap();
+		initOutline();
+
+		removeAllMarkers();
+		createMarkersAndList();
+
+		activated = true;
+		listPopup.classList.add("active");
+		staggerReveal();
+		setRevealed(getFile3D(), ACTIVE_MODEL, true);
+	})();
+	return activation;
+}
+
+export function deactivateRecyclingPlant() {
+	if (!activated) return;
+	activated = false;
+	activation = null;
+	clearFocus();
+
+	staggerHide(() => {
+		listPopup.classList.remove("active");
+		removeAllMarkers();
+	});
+	setRevealed(getFile3D(), ACTIVE_MODEL, false);
+
+	flyCamera(DEFAULT_VIEW.position, DEFAULT_VIEW.target, 1.5);
+}
+
+/**
+ * Immediate teardown before the catalogue swaps the model: markers live on the old file3D, so
+ * they must go while it is still in the scene. No camera flight (the new model sets its own view).
+ */
+export function detachRecyclingPlant() {
+	flight?.kill();
+	flight = null;
+	unlockControls();
+	if (activated) {
+		clearFocus();
+		listPopup.classList.remove("active");
+		removeAllMarkers();
+	}
+	activated = false;
+	activation = null;
+	meshByName = null; // mesh names are per model
+	resetReveal();
+}
+
+// ------------------------------------------- tour api -------------------------------------------
+
+export function getTourStops() {
+	return modelAnnotations()
+		.filter((ann) => isFlyable(ann) && isShown(ann))
+		.sort((a, b) => a.order - b.order);
+}
+
+export function getFocusedId() {
+	return focusedId;
+}
+
+export function visitAnnotation(id) {
+	return activated ? focusAnnotation(id) : Promise.resolve();
+}
+
+export function haltCamera() {
+	if (!flight) return;
+	flight.kill();
+	flight = null;
+	unlockControls();
+	if (!popupAnn) clearFocus();
+}
+
+export function resetView(duration = 1.8) {
+	unlockControls();
+	clearFocus();
+	const view = getDefaultView();
+	return new Promise((resolve) => flyCamera(view.position, view.target, duration, resolve));
+}
