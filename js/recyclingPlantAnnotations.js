@@ -33,7 +33,7 @@ const annotations =
   {
     "id": "container-crossflow-turbine",
     "model": "container",
-    "order": 1,
+    "order": 2,
     "group": null,
     "title": {
       "en": "Crossflow Turbine",
@@ -219,7 +219,7 @@ const annotations =
   {
     "id": "container-generator",
     "model": "container",
-    "order": 2,
+    "order": 4,
     "group": null,
     "title": {
       "en": "Generator",
@@ -337,7 +337,7 @@ const annotations =
   {
     "id": "container-control-panel",
     "model": "container",
-    "order": 3,
+    "order": 5,
     "group": null,
     "title": {
       "en": "Control Panel",
@@ -490,7 +490,7 @@ const annotations =
   {
     "id": "container-power-conditioner",
     "model": "container",
-    "order": 4,
+    "order": 7,
     "group": null,
     "title": {
       "en": "Power Conditioner",
@@ -639,7 +639,7 @@ const annotations =
   {
     "id": "container-motorized-inlet-valve",
     "model": "container",
-    "order": 5,
+    "order": 1,
     "group": null,
     "title": {
       "en": "Motorized Inlet Valve",
@@ -871,7 +871,7 @@ const annotations =
   {
     "id": "container-guide-vane",
     "model": "container",
-    "order": 7,
+    "order": 3,
     "group": null,
     "title": {
       "en": "Guide Vane",

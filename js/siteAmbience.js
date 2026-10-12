@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { scene, camera, orbitControls, frameCallbacks } from "../script.js";
+import { scene, camera, renderer, orbitControls, frameCallbacks } from "../script.js";
 import { ACTIVE_MODEL, DEFAULT_VIEW } from "./recyclingPlantAnnotationsStore.js";
 
 // Ambience per catalogue model key (data-key in index.php). Everything here is shader/tween work on
@@ -34,6 +34,7 @@ const time = { value: 0 }; // shared shader uniform
 let config = null;
 let mixer = null;
 let intro = null;
+const INTRO_HOLD_FRAMES = 3; // rendered frames to wait (at the start pose) before the swoop begins
 const skyTextures = {};
 
 // ------------------------------------------- sky + fog -------------------------------------------
@@ -131,7 +132,18 @@ function playIntro() {
 		camera.position.setFromSpherical(now).add(target);
 	};
 	place();
-	intro = gsap.to(progress, { t: 1, duration: 2.8, ease: "power2.inOut", onUpdate: place, onComplete: () => (intro = null) });
+	// The first frames of a freshly added model stall (shader programs, texture uploads): compile now and
+	// hold the start pose for a couple of frames, so the swoop runs smoothly from its first frame.
+	renderer.compile(scene, camera);
+	const tween = gsap.to(progress, { t: 1, duration: 2.8, ease: "power2.inOut", paused: true, onUpdate: place, onComplete: () => (intro = null) });
+	intro = tween;
+	let frames = INTRO_HOLD_FRAMES;
+	const hold = () => {
+		if (intro !== tween) return; // stopped (input or model switch) while holding
+		if (--frames > 0) requestAnimationFrame(hold);
+		else tween.play();
+	};
+	requestAnimationFrame(hold);
 }
 
 // ------------------------------------------- attract mode -------------------------------------------
@@ -170,10 +182,12 @@ function stopAttract() {
 	attract = null;
 }
 
-function onInput() {
+function onInput(event) {
 	lastInput = performance.now();
 	if (attract) stopAttract();
-	if (intro) stopIntro(); // the visitor takes over mid-swoop
+	// The visitor takes over mid-swoop, but only on purpose: a mouse merely moving (e.g. right after
+	// clicking the catalogue) must not cut it short.
+	if (intro && event.type !== "pointermove") stopIntro();
 }
 ["pointerdown", "pointermove", "wheel", "keydown", "touchstart"].forEach((type) =>
 	window.addEventListener(type, onInput, { capture: true, passive: true })

@@ -20,7 +20,7 @@
         "image": "Obito.png",
         "image2": "Obito-2.png",
         "location": "宮崎県",
-        "name": "大人小水力発電所",
+        "name": "大日止昴小水力発電所",
         "details": {
             "有効落差": "82 m",
             "最大流量": "0.11 m³/s",
@@ -35,7 +35,7 @@
         "image": "Mise.png",
         "image2": "Mise-2.png",
         "location": "佐賀県",
-        "name": "三瀬発電所",
+        "name": "井手野毘沙門堂発電所",
         "details": {
             "有効落差": "6 m",
             "最大流量": "0.095 m³/s",
@@ -80,7 +80,7 @@
         "image": "ShiraitoStep3.png",
         "image2": "ShiraitoStep3-2.png",
         "location": "福岡県",
-        "name": "白糸step3発電所",
+        "name": "白糸の滝step3小水力発電所",
         "details": {
             "有効落差": "25 m",
             "最大流量": "0.1 m³/s",
@@ -95,7 +95,7 @@
         "image": "Matsuguma.png",
         "image2": "Matsuguma-2.png",
         "location": "佐賀県",
-        "name": "松隈発電所",
+        "name": "松隈小水力発電所",
         "details": {
             "有効落差": "20.4 m",
             "最大流量": "0.22 m³/s",
@@ -110,13 +110,13 @@
         "image": "HonjoIchitoki.png",
         "image2": "HonjoIchitoki-2.png",
         "location": "鹿児島県",
-        "name": "本城イチトキ発電所",
+        "name": "本城イチトキ小水力発電所",
         "details": {
             "有効落差": "18.1 m",
             "最大流量": "0.16 m³/s",
             "発電機出力": "20 kW",
             "年間電力量": "120 MWh/年",
-            "CO2年間削減量": "69 tCO₂"
+            "CO2年間削減量": "66 tCO₂"
         }
     },
     {
@@ -155,28 +155,13 @@
         "image": "Abamura.png",
         "image2": "Abamura-2.png",
         "location": "岡山県",
-        "name": "阿波村発電所",
+        "name": "あばむらコンパクト発電所",
         "details": {
             "有効落差": "69.1 m",
             "最大流量": "0.12 m³/s",
-            "発電機出力": "50 kW",
+            "発電機出力": "49.9 kW",
             "年間電力量": "335 MWh/年",
             "CO2年間削減量": "184 tCO₂"
-        }
-    },
-    {
-        "lat": 32.55983439048652,
-        "lng": 131.32004774843523,
-        "image": "Morotsuka.png",
-        "image2": "Morotsuka-2.png",
-        "location": "宮崎県",
-        "name": "諸塚発電所",
-        "details": {
-            "有効落差": "30.4 m",
-            "最大流量": "0.14 m³/s",
-            "発電機出力": "33 kW",
-            "年間電力量": "250 MWh/年",
-            "CO2年間削減量": "137 tCO₂"
         }
     },
     {
@@ -184,14 +169,14 @@
         "lng": 130.82485911071853,
         "image": "Kodomo1.png",
         "image2": "Kodomo2.png",
-        "location": "熊本県​",
+        "location": "熊本県",
         "name": "こども発電所クロスフロー水車",
         "details": {
-            "有効落差": "46.6  m",
-            "最大流量": "0.17 m3/s",
+            "有効落差": "46.6 m",
+            "最大流量": "0.17 m³/s",
             "発電機出力": "49.9 kW",
             "年間電力量": "276 MWh/年",
-            "CO2 排出量の削減": "151 tCO₂"
+            "CO2年間削減量": "151 tCO₂"
         }
     },
     {
@@ -199,7 +184,7 @@
         "lng": 131.45148744510678,
         "image": "Asati.png",
         "image2": "Asati-2.png",
-        "location": "大分県​",
+        "location": "大分県",
         "name": "プロペラ水車用発電所",
         "details": {
             "有効落差": "8 m",
@@ -214,7 +199,7 @@
         "lng": 131.30589,
         "image": "Mizuwake.png",
         "image2": "Mizuwake-2.png",
-        "location": "大分県​",
+        "location": "大分県",
         "name": "水分トンネルの小水力発電所",
         "details": {
             "有効落差": "35.9 m",

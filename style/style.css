@@ -2513,6 +2513,446 @@ canvas {
 	transform: scale(1);
 }
 
+/* Local map: sidebar (KPI totals + plant list) next to the map */
+.map-local {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	grid-template-columns: 340px minmax(0, 1fr);
+	font-family: "Ubuntu", sans-serif;
+}
+
+.map-local .map-leaflet {
+	position: relative;
+	inset: auto;
+}
+
+.map-side {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	background: #f4fafb;
+	border-right: 1px solid rgba(24, 154, 180, 0.15);
+}
+
+/* KPI panel: annual energy as the headline, capacity + CO₂ as the supporting row */
+.map-kpis {
+	position: relative;
+	overflow: hidden;
+	margin: 16px 16px 18px;
+	padding: 18px 20px;
+	border-radius: 12px;
+	background: #04445f;
+	box-shadow: 0 6px 16px rgba(4, 68, 95, 0.22);
+	color: #ffffff;
+}
+
+/* faint flowing-water lines in the empty top-right corner */
+.map-kpis::after {
+	content: "";
+	position: absolute;
+	top: 14px;
+	right: -14px;
+	width: 120px;
+	height: 66px;
+	background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 120' fill='none' stroke='%2374e7d4' stroke-width='2'%3E%3Cpath d='M0 40c27 0 27-14 55-14s27 14 55 14 27-14 55-14 27 14 55 14'/%3E%3Cpath d='M0 70c27 0 27-14 55-14s27 14 55 14 27-14 55-14 27 14 55 14'/%3E%3Cpath d='M0 100c27 0 27-14 55-14s27 14 55 14 27-14 55-14 27 14 55 14'/%3E%3C/svg%3E") center / contain no-repeat;
+	opacity: 0.2;
+	pointer-events: none;
+}
+
+.map-kpis > * {
+	position: relative;
+}
+
+.map-kpi-label {
+	overflow: hidden;
+	font-size: 12px;
+	color: rgba(255, 255, 255, 0.7);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.map-kpis > .map-kpi-label {
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: #74e7d4;
+}
+
+.map-kpi-hero {
+	margin-top: 6px;
+	font-size: 42px;
+	font-weight: 700;
+	line-height: 1;
+	letter-spacing: -0.01em;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.map-kpi-hero span {
+	margin-left: 6px;
+	font-size: 15px;
+	font-weight: 500;
+	letter-spacing: 0;
+	color: #74e7d4;
+}
+
+.map-kpi-note {
+	margin-top: 8px;
+	font-size: 12px;
+	color: rgba(255, 255, 255, 0.7);
+}
+
+.map-kpi-note b {
+	font-weight: 700;
+	color: #ffffff;
+}
+
+.map-kpi-row {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	margin-top: 16px;
+	padding-top: 14px;
+	border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.map-kpi-stat + .map-kpi-stat {
+	padding-left: 16px;
+	border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.map-kpi-value {
+	font-size: 22px;
+	font-weight: 700;
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.map-kpi-value span {
+	margin-left: 4px;
+	font-size: 12px;
+	font-weight: 500;
+	color: #74e7d4;
+}
+
+.map-kpi-stat .map-kpi-label {
+	margin-top: 4px;
+}
+
+.map-list-dot svg,
+.mh-hq svg,
+.map-legend-hq svg {
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.8;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.map-list-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 16px 8px;
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #04445f;
+}
+
+.map-list-head span {
+	padding: 1px 7px;
+	border-radius: 999px;
+	background: rgba(24, 154, 180, 0.12);
+	font-size: 11px;
+	color: #189ab4;
+}
+
+.map-list {
+	flex: 1;
+	min-height: 0;
+	margin: 0;
+	padding: 0 8px 12px;
+	overflow-y: auto;
+	list-style: none;
+}
+
+.map-list-item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	padding: 8px;
+	border: 0;
+	border-radius: 8px;
+	background: none;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	transition: background-color 0.15s ease;
+}
+
+.map-list-item:hover {
+	background: rgba(24, 154, 180, 0.08);
+}
+
+.map-list-item.is-active {
+	background: rgba(24, 154, 180, 0.16);
+}
+
+.map-list-dot {
+	flex: none;
+	width: 10px;
+	height: 10px;
+	box-sizing: border-box;
+	border: 2px solid #ffffff;
+	border-radius: 50%;
+	background: #189ab4;
+	box-shadow: 0 0 0 1px rgba(24, 154, 180, 0.35);
+}
+
+.map-list-item.is-hq .map-list-dot {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	margin: 0 -6px;
+	border: 0;
+	background: #ff7582;
+	box-shadow: none;
+	color: #ffffff;
+}
+
+.map-list-item.is-hq .map-list-dot svg {
+	width: 14px;
+	height: 14px;
+}
+
+.map-list-item.is-hq {
+	margin-bottom: 4px;
+	padding-bottom: 12px;
+	border-bottom: 1px solid rgba(24, 154, 180, 0.12);
+	border-radius: 8px 8px 0 0;
+}
+
+.map-list-text {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.map-list-name {
+	overflow: hidden;
+	font-size: 13px;
+	font-weight: 500;
+	color: #04445f;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.map-list-sub {
+	font-size: 11px;
+	color: #7c8da5;
+}
+
+.map-list-value {
+	flex: none;
+	font-size: 12px;
+	color: #189ab4;
+	font-variant-numeric: tabular-nums;
+}
+
+/* basemap labels (js/microhydroMap.js: PREFECTURE_ZOOM / CITY_ZOOM toggle the container classes) */
+/* .map-leaflet prefix: beats leaflet.css (.leaflet-marker-icon { display: block }) */
+.map-leaflet .mh-label-prefecture,
+.map-leaflet .mh-label-city {
+	display: none;
+	pointer-events: none;
+}
+
+.mh-label-prefecture span,
+.mh-label-city span {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	white-space: nowrap;
+	text-shadow: 0 0 3px #ffffff, 0 0 3px #ffffff;
+}
+
+.mh-label-prefecture span {
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: #9aaebb;
+}
+
+.mh-label-prefecture.is-served span {
+	font-weight: 700;
+	color: #5f8fa0;
+}
+
+.mh-label-city span {
+	transform: translate(6px, -50%);
+	font-size: 11px;
+	color: #475b74;
+}
+
+.mh-label-city span::before {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: -8px;
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+	background: #7c8da5;
+	transform: translateY(-50%);
+}
+
+.map-leaflet.show-prefectures .mh-label-prefecture,
+.map-leaflet.show-cities .mh-label-city {
+	display: block;
+}
+
+/* Nakayama HQ marker */
+.mh-hq span {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 34px;
+	height: 34px;
+	box-sizing: border-box;
+	border: 3px solid #ffffff;
+	border-radius: 50%;
+	background: #ff7582;
+	box-shadow: 0 2px 8px rgba(160, 40, 60, 0.4);
+	color: #ffffff;
+	transition: transform 0.15s ease;
+}
+
+.mh-hq span svg {
+	width: 17px;
+	height: 17px;
+}
+
+.mh-hq:hover span,
+.mh-hq.is-hover span {
+	transform: scale(1.12);
+}
+
+.leaflet-tooltip.mh-tooltip {
+	padding: 4px 8px;
+	border: 0;
+	border-radius: 6px;
+	background: #04445f;
+	box-shadow: 0 2px 6px rgba(4, 68, 95, 0.3);
+	font-family: "Ubuntu", sans-serif;
+	font-size: 12px;
+	color: #ffffff;
+}
+
+.leaflet-tooltip.mh-tooltip::before {
+	border-top-color: #04445f;
+}
+
+/* legend + first-use hint over the map */
+.map-legend {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 8px 12px;
+	border-radius: 8px;
+	background: rgba(255, 255, 255, 0.92);
+	box-shadow: 0 1px 4px rgba(4, 68, 95, 0.15);
+	font-family: "Ubuntu", sans-serif;
+	font-size: 12px;
+	color: #04445f;
+}
+
+.map-legend div {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.map-legend-plant {
+	width: 12px;
+	height: 12px;
+	margin: 0 3px;
+	box-sizing: border-box;
+	border: 2px solid #ffffff;
+	border-radius: 50%;
+	background: #189ab4;
+	box-shadow: 0 0 0 1px rgba(24, 154, 180, 0.4);
+}
+
+.map-legend-hq {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #ff7582;
+	color: #ffffff;
+}
+
+.map-legend-hq svg {
+	width: 11px;
+	height: 11px;
+}
+
+.map-hint {
+	position: absolute;
+	z-index: 800;
+	left: 50%;
+	bottom: 28px;
+	padding: 7px 14px;
+	border-radius: 999px;
+	background: rgba(4, 68, 95, 0.85);
+	font-size: 13px;
+	color: #ffffff;
+	white-space: nowrap;
+	transform: translateX(-50%);
+	pointer-events: none;
+	transition: opacity 0.4s ease;
+}
+
+.map-hint.is-hidden {
+	opacity: 0;
+}
+
+.mh-popup-address {
+	font-size: 12px;
+	line-height: 1.5;
+	color: #475b74;
+}
+
+@media (max-width: 900px) {
+	.map-local {
+		grid-template-columns: none;
+		grid-template-rows: minmax(0, 45%) minmax(0, 1fr);
+	}
+
+	.map-side {
+		overflow-y: auto;
+		border-right: 0;
+		border-bottom: 1px solid rgba(24, 154, 180, 0.15);
+	}
+
+	.map-list {
+		overflow: visible;
+	}
+
+	.map-hint {
+		display: none;
+	}
+}
+
 .map-body {
 	position: relative;
 	flex: 1;
