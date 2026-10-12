@@ -1,1 +1,1 @@
-# Smart_Presentation_Exhibition_Czech_2026
+# Smart_Presentation_Exhibition_UzExpo_2026
