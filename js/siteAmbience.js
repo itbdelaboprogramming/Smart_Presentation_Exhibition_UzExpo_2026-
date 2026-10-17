@@ -150,9 +150,13 @@ function playIntro() {
 let lastInput = performance.now();
 let attract = null; // null | "flying" | "rotating"
 let attractFlight = null;
+const USER_ROTATE_SPEED = orbitControls.autoRotateSpeed;
+
+const userRotating = () => document.querySelector(".menu-container-blue-animation")?.classList.contains("active") ?? false;
 
 function attractAllowed() {
 	return (
+		!userRotating() &&
 		!document.getElementById("explode-button")?.classList.contains("active") &&
 		!document.getElementById("tour-controls")?.classList.contains("is-playing") &&
 		!document.querySelector(".media-library.active, .map-modal.active") &&
@@ -178,7 +182,8 @@ function startAttract() {
 function stopAttract() {
 	attractFlight?.kill();
 	attractFlight = null;
-	orbitControls.autoRotate = false;
+	orbitControls.autoRotate = userRotating();
+	orbitControls.autoRotateSpeed = USER_ROTATE_SPEED;
 	attract = null;
 }
 
