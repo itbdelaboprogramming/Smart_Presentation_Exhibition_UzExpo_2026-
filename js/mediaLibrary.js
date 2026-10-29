@@ -2,8 +2,10 @@ import mediaItems from "./mediaItems.js";
 import { t, localize, onLangChange } from "./i18n.js";
 import { createPdfViewer } from "./pdfViewer.js";
 
-const PDFJS_URL = new URL("../vendor/pdfjs/pdf.min.mjs", import.meta.url).href;
-const PDFJS_WORKER_URL = new URL("../vendor/pdfjs/pdf.worker.min.mjs", import.meta.url).href;
+// pdf.js ships as .mjs; renamed to .js because IIS (the expo server) answers 404 for unregistered
+// extensions. Rename again when updating pdf.js.
+const PDFJS_URL = new URL("../vendor/pdfjs/pdf.min.js", import.meta.url).href;
+const PDFJS_WORKER_URL = new URL("../vendor/pdfjs/pdf.worker.min.js", import.meta.url).href;
 const THUMB_WIDTH = 480;
 
 const root = document.getElementById("media-library");

@@ -281,7 +281,7 @@ async function buildLocal() {
 	const [L, data, shapes] = await Promise.all([
 		import(LEAFLET_JS),
 		fetch(`${DATA_DIR}data.json`).then((r) => r.json()),
-		fetch(`${DATA_DIR}basemap.geojson`).then((r) => r.json()),
+		fetch(`${DATA_DIR}basemap.json`).then((r) => r.json()), // GeoJSON; .json because IIS has no .geojson MIME type
 	]);
 	// North to south, so the list reads in the same order as the map.
 	const sites = data.map((site) => ({ ...site, location: site.location.trim() })).sort((a, b) => b.lat - a.lat);
